@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.Year;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.claimflow.common.BusinessRuleViolationException;
 import com.claimflow.common.PageResponse;
 import com.claimflow.common.ResourceNotFoundException;
+import com.claimflow.fraud.FraudAssessmentService;
 import com.claimflow.policy.Policy;
 import com.claimflow.policy.PolicyRepository;
 
@@ -27,23 +29,28 @@ import com.claimflow.policy.PolicyRepository;
 @Transactional(readOnly = true)
 public class ClaimService {
 
+    public static final String FRAUD_ENGINE_ACTOR = "system:fraud-engine";
+
     private static final Logger log = LoggerFactory.getLogger(ClaimService.class);
 
     private final ClaimRepository claimRepository;
     private final ClaimEventRepository claimEventRepository;
     private final PolicyRepository policyRepository;
     private final ClaimStateMachine stateMachine;
+    private final FraudAssessmentService fraudAssessmentService;
     private final Clock clock;
 
     public ClaimService(ClaimRepository claimRepository,
                         ClaimEventRepository claimEventRepository,
                         PolicyRepository policyRepository,
                         ClaimStateMachine stateMachine,
+                        FraudAssessmentService fraudAssessmentService,
                         Clock clock) {
         this.claimRepository = claimRepository;
         this.claimEventRepository = claimEventRepository;
         this.policyRepository = policyRepository;
         this.stateMachine = stateMachine;
+        this.fraudAssessmentService = fraudAssessmentService;
         this.clock = clock;
     }
 
@@ -67,14 +74,15 @@ public class ClaimService {
 
     /**
      * Moves a claim to a new status. Steps: check the move is allowed, check approval
-     * amounts, write the audit event, save.
+     * amounts, write the audit event, run fraud rules if it just entered review, save.
      */
     @Transactional
     public ClaimResponse transition(Long claimId, TransitionRequest request, String actor) {
         Claim claim = findClaim(claimId);
         try (MDC.MDCCloseable ignored = MDC.putCloseable("claimNumber", claim.getClaimNumber())) {
+            ClaimStatus from = claim.getStatus();
             ClaimStatus to = request.toStatus();
-            stateMachine.validate(claim.getStatus(), to);
+            stateMachine.validate(from, to);
 
             if (to == ClaimStatus.APPROVED) {
                 claim.approve(checkApprovedAmount(claim, request.approvedAmount()));
@@ -83,6 +91,12 @@ public class ClaimService {
             }
 
             recordTransition(claim, to, request.reason(), actor);
+
+            // Fraud rules run once: when a new claim first enters review.
+            // Coming back from investigation (FLAGGED -> UNDER_REVIEW) means a human cleared it.
+            if (from == ClaimStatus.FNOL && to == ClaimStatus.UNDER_REVIEW) {
+                runFraudAssessment(claim);
+            }
 
             // Flush now so a @Version conflict fails here and becomes a 409.
             claimRepository.saveAndFlush(claim);
@@ -145,6 +159,19 @@ public class ClaimService {
                     + " (claimed amount minus deductible, capped at the coverage limit)");
         }
         return approvedAmount;
+    }
+
+    /** Any flag sends the claim straight to investigation, with the reasons in the audit trail. */
+    private void runFraudAssessment(Claim claim) {
+        List<FraudFlag> flags = fraudAssessmentService.assess(claim);
+        if (flags.isEmpty()) {
+            return;
+        }
+        claim.addFraudFlags(flags);
+        stateMachine.validate(claim.getStatus(), ClaimStatus.FLAGGED_FOR_INVESTIGATION);
+        String reasons = flags.stream().map(FraudFlag::toString).collect(Collectors.joining("; "));
+        recordTransition(claim, ClaimStatus.FLAGGED_FOR_INVESTIGATION,
+                "Auto-flagged by fraud rules: " + reasons, FRAUD_ENGINE_ACTOR);
     }
 
     /** Changes the status and writes one audit row. Caller must validate the move first. */

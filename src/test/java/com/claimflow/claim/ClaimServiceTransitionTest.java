@@ -4,13 +4,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -23,6 +26,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.claimflow.TestFixtures;
 import com.claimflow.common.BusinessRuleViolationException;
 import com.claimflow.common.ResourceNotFoundException;
+import com.claimflow.fraud.FraudAssessmentService;
 import com.claimflow.policy.PolicyRepository;
 
 @ExtendWith(MockitoExtension.class)
@@ -39,12 +43,15 @@ class ClaimServiceTransitionTest {
     @Mock
     PolicyRepository policyRepository;
 
+    @Mock
+    FraudAssessmentService fraudAssessmentService;
+
     ClaimService service;
 
     @BeforeEach
     void setUp() {
         service = ClaimServiceTestSupport.newService(claimRepository, claimEventRepository, policyRepository,
-                Clock.fixed(NOW, ZoneOffset.UTC));
+                fraudAssessmentService, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     /** Policy: coverage 10,000, deductible 500. Claim for 1,200 -> max payout 700. */
@@ -146,6 +153,54 @@ class ClaimServiceTransitionTest {
 
         assertThatThrownBy(() -> service.transition(100L, approve("999999.00"), "adjuster"))
                 .isInstanceOf(InvalidClaimTransitionException.class);
+    }
+
+    @Test
+    void enteringReviewWithFraudFlagsAutoFlagsTheClaim() {
+        Claim claim = givenClaim(ClaimStatus.FNOL);
+        when(fraudAssessmentService.assess(claim))
+                .thenReturn(List.of(new FraudFlag("EARLY_CLAIM", "Incident 2 day(s) after policy start")));
+
+        ClaimResponse response = service.transition(100L, to(ClaimStatus.UNDER_REVIEW), "adjuster.kim");
+
+        assertThat(response.status()).isEqualTo(ClaimStatus.FLAGGED_FOR_INVESTIGATION);
+        assertThat(response.fraudFlags())
+                .extracting(ClaimResponse.FraudFlagResponse::rule)
+                .containsExactly("EARLY_CLAIM");
+
+        // Two audit rows: the human move, then the automatic flag.
+        ArgumentCaptor<ClaimEvent> events = ArgumentCaptor.forClass(ClaimEvent.class);
+        verify(claimEventRepository, times(2)).save(events.capture());
+        ClaimEvent review = events.getAllValues().get(0);
+        ClaimEvent flagged = events.getAllValues().get(1);
+        assertThat(review.getToStatus()).isEqualTo(ClaimStatus.UNDER_REVIEW);
+        assertThat(review.getActor()).isEqualTo("adjuster.kim");
+        assertThat(flagged.getFromStatus()).isEqualTo(ClaimStatus.UNDER_REVIEW);
+        assertThat(flagged.getToStatus()).isEqualTo(ClaimStatus.FLAGGED_FOR_INVESTIGATION);
+        assertThat(flagged.getActor()).isEqualTo(ClaimService.FRAUD_ENGINE_ACTOR);
+        assertThat(flagged.getReason()).contains("EARLY_CLAIM: Incident 2 day(s) after policy start");
+    }
+
+    @Test
+    void enteringReviewWithoutFlagsStaysUnderReview() {
+        Claim claim = givenClaim(ClaimStatus.FNOL);
+        when(fraudAssessmentService.assess(claim)).thenReturn(List.of());
+
+        ClaimResponse response = service.transition(100L, to(ClaimStatus.UNDER_REVIEW), "adjuster");
+
+        assertThat(response.status()).isEqualTo(ClaimStatus.UNDER_REVIEW);
+        assertThat(response.fraudFlags()).isEmpty();
+        verify(claimEventRepository, times(1)).save(any());
+    }
+
+    @Test
+    void returningFromInvestigationDoesNotRerunFraudRules() {
+        givenClaim(ClaimStatus.FLAGGED_FOR_INVESTIGATION);
+
+        ClaimResponse response = service.transition(100L, to(ClaimStatus.UNDER_REVIEW), "investigator");
+
+        assertThat(response.status()).isEqualTo(ClaimStatus.UNDER_REVIEW);
+        verifyNoInteractions(fraudAssessmentService);
     }
 
     @Test

@@ -24,6 +24,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.claimflow.TestFixtures;
 import com.claimflow.common.BusinessRuleViolationException;
 import com.claimflow.common.ResourceNotFoundException;
+import com.claimflow.fraud.FraudAssessmentService;
 import com.claimflow.policy.Policy;
 import com.claimflow.policy.PolicyRepository;
 import com.claimflow.policy.PolicyStatus;
@@ -43,12 +44,15 @@ class ClaimServiceFnolTest {
     @Mock
     PolicyRepository policyRepository;
 
+    @Mock
+    FraudAssessmentService fraudAssessmentService;
+
     ClaimService service;
 
     @BeforeEach
     void setUp() {
         service = ClaimServiceTestSupport.newService(claimRepository, claimEventRepository, policyRepository,
-                Clock.fixed(NOW, ZoneOffset.UTC));
+                fraudAssessmentService, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     private static CreateClaimRequest request(LocalDate incidentDate) {
