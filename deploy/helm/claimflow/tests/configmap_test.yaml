@@ -1,0 +1,31 @@
+suite: configmap
+templates:
+  - templates/configmap.yaml
+tests:
+  - it: passes fraud thresholds and DB url as env vars
+    set:
+      database.url: jdbc:postgresql://db.prod:5432/claims
+      config.fraud.earlyClaimDays: 10
+    asserts:
+      - equal:
+          path: data.SPRING_DATASOURCE_URL
+          value: jdbc:postgresql://db.prod:5432/claims
+      - equal:
+          path: data.CLAIMFLOW_FRAUD_EARLYCLAIMDAYS
+          value: "10"
+      - equal:
+          path: data.CLAIMFLOW_FRAUD_FREQUENCYMAXCLAIMS
+          value: "3"
+
+  - it: does not set a Spring profile by default
+    asserts:
+      - notExists:
+          path: data.SPRING_PROFILES_ACTIVE
+
+  - it: sets the Spring profile when configured
+    set:
+      config.springProfiles: dev
+    asserts:
+      - equal:
+          path: data.SPRING_PROFILES_ACTIVE
+          value: dev

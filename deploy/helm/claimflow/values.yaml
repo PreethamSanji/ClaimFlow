@@ -1,0 +1,82 @@
+replicaCount: 2
+
+image:
+  repository: ghcr.io/preethamsanji/claimflow
+  # Defaults to the chart's appVersion when empty.
+  tag: ""
+  # e.g. "sha256:abc...". When set, it wins over tag (immutable, safer for prod).
+  digest: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 80
+
+containerPort: 8080
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 768Mi
+
+# App settings, passed as environment variables through a ConfigMap.
+config:
+  # e.g. "dev" loads seed data.
+  springProfiles: ""
+  javaToolOptions: "-XX:MaxRAMPercentage=75.0"
+  fraud:
+    earlyClaimDays: 7
+    frequencyMaxClaims: 3
+    frequencyWindowDays: 30
+    lateReportingDays: 30
+
+database:
+  url: jdbc:postgresql://postgres:5432/claimflow
+  # The chart does not create this Secret. Create it yourself (or with a secrets tool).
+  existingSecret:
+    name: claimflow-db
+    usernameKey: username
+    passwordKey: password
+
+probes:
+  # Startup probe gives the JVM time to boot before liveness starts checking.
+  startup:
+    periodSeconds: 5
+    failureThreshold: 30
+  liveness:
+    periodSeconds: 10
+    failureThreshold: 3
+  readiness:
+    periodSeconds: 5
+    failureThreshold: 3
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+# Needs the Prometheus Operator CRDs in the cluster.
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+  labels: {}
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

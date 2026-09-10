@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "claimflow.fullname" . }}
+  labels:
+    {{- include "claimflow.labels" . | nindent 4 }}
+data:
+  # Spring maps these env vars to properties, e.g. CLAIMFLOW_FRAUD_EARLYCLAIMDAYS -> claimflow.fraud.early-claim-days
+  SPRING_DATASOURCE_URL: {{ .Values.database.url | quote }}
+  CLAIMFLOW_FRAUD_EARLYCLAIMDAYS: {{ .Values.config.fraud.earlyClaimDays | quote }}
+  CLAIMFLOW_FRAUD_FREQUENCYMAXCLAIMS: {{ .Values.config.fraud.frequencyMaxClaims | quote }}
+  CLAIMFLOW_FRAUD_FREQUENCYWINDOWDAYS: {{ .Values.config.fraud.frequencyWindowDays | quote }}
+  CLAIMFLOW_FRAUD_LATEREPORTINGDAYS: {{ .Values.config.fraud.lateReportingDays | quote }}
+  JAVA_TOOL_OPTIONS: {{ .Values.config.javaToolOptions | quote }}
+  {{- with .Values.config.springProfiles }}
+  SPRING_PROFILES_ACTIVE: {{ . | quote }}
+  {{- end }}

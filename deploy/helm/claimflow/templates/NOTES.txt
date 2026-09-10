@@ -1,0 +1,8 @@
+ClaimFlow is deployed as {{ include "claimflow.fullname" . }}.
+
+Try it:
+  kubectl port-forward svc/{{ include "claimflow.fullname" . }} 8080:{{ .Values.service.port }}
+  open http://localhost:8080/swagger-ui.html
+
+DB credentials are read from Secret "{{ .Values.database.existingSecret.name }}"
+(keys: {{ .Values.database.existingSecret.usernameKey }}, {{ .Values.database.existingSecret.passwordKey }}).

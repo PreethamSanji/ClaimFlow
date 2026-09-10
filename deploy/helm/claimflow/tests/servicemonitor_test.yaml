@@ -1,0 +1,25 @@
+suite: servicemonitor
+templates:
+  - templates/servicemonitor.yaml
+tests:
+  - it: is not rendered by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: scrapes /actuator/prometheus when enabled
+    set:
+      serviceMonitor.enabled: true
+      serviceMonitor.labels.release: kube-prometheus-stack
+    asserts:
+      - isKind:
+          of: ServiceMonitor
+      - equal:
+          path: spec.endpoints[0].path
+          value: /actuator/prometheus
+      - equal:
+          path: spec.endpoints[0].port
+          value: http
+      - equal:
+          path: metadata.labels.release
+          value: kube-prometheus-stack

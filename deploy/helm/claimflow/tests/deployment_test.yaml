@@ -1,0 +1,110 @@
+suite: deployment
+templates:
+  - templates/deployment.yaml
+  - templates/configmap.yaml
+tests:
+  - it: defaults the image tag to the chart appVersion
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/preethamsanji/claimflow:0.1.0
+
+  - it: uses the tag when no digest is set
+    template: templates/deployment.yaml
+    set:
+      image.tag: "1.2.3"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/preethamsanji/claimflow:1.2.3
+
+  - it: uses the digest over the tag when both are set
+    template: templates/deployment.yaml
+    set:
+      image.tag: "1.2.3"
+      image.digest: "sha256:0123456789abcdef"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/preethamsanji/claimflow@sha256:0123456789abcdef
+
+  - it: reads DB credentials from the configured secret name and keys
+    template: templates/deployment.yaml
+    set:
+      database.existingSecret.name: prod-db
+      database.existingSecret.usernameKey: db-user
+      database.existingSecret.passwordKey: db-pass
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SPRING_DATASOURCE_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: prod-db
+                key: db-user
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SPRING_DATASOURCE_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: prod-db
+                key: db-pass
+
+  - it: fails when the secret name is empty
+    template: templates/deployment.yaml
+    set:
+      database.existingSecret.name: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "database.existingSecret.name is required"
+
+  - it: probes the actuator liveness and readiness endpoints
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.path
+          value: /actuator/health/liveness
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /actuator/health/readiness
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.httpGet.path
+          value: /actuator/health/liveness
+
+  - it: uses configured replicas and resources
+    template: templates/deployment.yaml
+    set:
+      replicaCount: 3
+      resources.limits.memory: 1Gi
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 3
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.memory
+          value: 1Gi
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.cpu
+          value: 250m
+
+  - it: runs as non-root with a read-only root filesystem
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+
+  - it: loads app config from the ConfigMap
+    template: templates/deployment.yaml
+    release:
+      name: demo
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].envFrom[0].configMapRef.name
+          value: demo-claimflow
