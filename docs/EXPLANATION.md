@@ -516,6 +516,10 @@ it runs in parallel with the Java build.
 - **Metrics are off in tests by default (the second bug CI caught).** `@SpringBootTest` disables metrics
   exporters, so `/actuator/prometheus` returned 404 in `ObservabilityIT`. Adding
   `@AutoConfigureObservability` to that test class turns them back on. The app itself was fine.
+- **`claims_created_total` became `claims_filed_total` (the third CI catch).** Spring Boot 3.5's Prometheus
+  client (1.x) follows OpenMetrics, where `_created` is a reserved suffix (it stores a counter's
+  creation time). So it stripped it: a meter named `claims.created` came out as `claims_total`.
+  The counter was renamed to `claims.filed`.
 - **The actor comes from `X-Actor`**, defaulting to `api-user`. With real auth you'd take it from the
   logged-in user (for example, a JWT subject via Spring Security).
 

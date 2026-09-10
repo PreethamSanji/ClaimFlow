@@ -184,7 +184,8 @@ Useful chart values: `replicaCount`, `image.tag` / `image.digest` (the digest wi
 - `GET /actuator/health/liveness` and `/readiness`. Readiness includes the DB check; liveness does not,
   so a DB outage takes pods out of the load balancer without restarting them all.
 - `GET /actuator/prometheus` with custom metrics:
-  - `claims_created_total`
+  - `claims_filed_total` (the spec said `claims_created_total`, but the Prometheus client used by
+    Spring Boot 3.5 strips the reserved `_created` suffix, so that name can't be produced)
   - `claims_transitions_total{from,to}`
   - `claims_fraud_flags_total{rule}`
   - `claims_fraud_assessment_seconds` (timer, with histogram buckets)

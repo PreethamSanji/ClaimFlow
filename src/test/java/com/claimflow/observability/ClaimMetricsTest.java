@@ -18,7 +18,7 @@ class ClaimMetricsTest {
         metrics.claimCreated();
         metrics.claimCreated();
 
-        assertThat(registry.get("claims.created").counter().count()).isEqualTo(2.0);
+        assertThat(registry.get("claims.filed").counter().count()).isEqualTo(2.0);
     }
 
     @Test

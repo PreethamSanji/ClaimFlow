@@ -54,7 +54,7 @@ class ObservabilityIT {
         String metrics = rest.getForObject("/actuator/prometheus", String.class);
 
         assertThat(metrics)
-                .contains("claims_created_total")
+                .contains("claims_filed_total")
                 .contains("claims_transitions_total{")
                 .contains("from=\"FNOL\"")
                 .contains("to=\"FLAGGED_FOR_INVESTIGATION\"")

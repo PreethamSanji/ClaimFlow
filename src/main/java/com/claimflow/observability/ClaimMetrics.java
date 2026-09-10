@@ -12,7 +12,9 @@ import io.micrometer.core.instrument.Timer;
 
 /**
  * Business metrics. Micrometer names use dots; Prometheus shows them with
- * underscores, e.g. "claims.created" -> claims_created_total.
+ * underscores, e.g. "claims.filed" -> claims_filed_total.
+ * Not "claims.created": the Prometheus client strips a "_created" suffix (it's reserved),
+ * so it would show up as plain claims_total.
  */
 @Component
 public class ClaimMetrics {
@@ -23,7 +25,7 @@ public class ClaimMetrics {
 
     public ClaimMetrics(MeterRegistry registry) {
         this.registry = registry;
-        this.claimsCreated = Counter.builder("claims.created")
+        this.claimsCreated = Counter.builder("claims.filed")
                 .description("Claims filed (FNOL)")
                 .register(registry);
         this.fraudAssessmentTimer = Timer.builder("claims.fraud.assessment")
