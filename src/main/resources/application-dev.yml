@@ -1,0 +1,6 @@
+# "dev" profile: also load seed data.
+spring:
+  flyway:
+    locations: classpath:db/migration,classpath:db/seed
+    # Seed uses a high version number, so allow later real migrations to apply.
+    out-of-order: true

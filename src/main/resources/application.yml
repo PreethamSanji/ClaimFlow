@@ -1,0 +1,33 @@
+spring:
+  application:
+    name: claimflow
+  datasource:
+    # Local defaults. Override with SPRING_DATASOURCE_URL / _USERNAME / _PASSWORD.
+    url: jdbc:postgresql://localhost:5432/claimflow
+    username: claimflow
+    password: claimflow
+  jpa:
+    # Flyway owns the schema. Hibernate never changes tables.
+    hibernate:
+      ddl-auto: none
+    # Don't keep DB sessions open during view rendering.
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+        # Loads lazy collections in batches to avoid N+1 queries.
+        default_batch_fetch_size: 50
+  flyway:
+    locations: classpath:db/migration
+
+server:
+  port: 8080
+  shutdown: graceful
+
+claimflow:
+  fraud:
+    early-claim-days: 7
+    frequency-max-claims: 3
+    frequency-window-days: 30
+    late-reporting-days: 30
