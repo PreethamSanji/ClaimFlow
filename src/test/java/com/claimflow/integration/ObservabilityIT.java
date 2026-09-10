@@ -7,6 +7,7 @@ import java.time.ZoneOffset;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.actuate.observability.AutoConfigureObservability;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.context.annotation.Import;
@@ -20,6 +21,8 @@ import com.claimflow.policy.PolicyResponse;
 import com.fasterxml.jackson.databind.JsonNode;
 
 /** Actuator endpoints Kubernetes and Prometheus depend on, plus the API docs. */
+// Spring Boot tests turn metrics exporters off by default; this turns Prometheus back on.
+@AutoConfigureObservability
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Import(TestcontainersConfiguration.class)
 class ObservabilityIT {

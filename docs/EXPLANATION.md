@@ -513,6 +513,9 @@ it runs in parallel with the Java build.
   `HandlerMethodValidationException`, not `MethodArgumentNotValidException`. The first version only
   formatted the second one, so the 400 responses lost their `errors` list. The fix: `GlobalExceptionHandler`
   now formats both the same way. That's a good "tell me about a bug you fixed" story.
+- **Metrics are off in tests by default (the second bug CI caught).** `@SpringBootTest` disables metrics
+  exporters, so `/actuator/prometheus` returned 404 in `ObservabilityIT`. Adding
+  `@AutoConfigureObservability` to that test class turns them back on. The app itself was fine.
 - **The actor comes from `X-Actor`**, defaulting to `api-user`. With real auth you'd take it from the
   logged-in user (for example, a JWT subject via Spring Security).
 
