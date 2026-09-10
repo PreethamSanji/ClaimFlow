@@ -31,3 +31,44 @@ claimflow:
     frequency-max-claims: 3
     frequency-window-days: 30
     late-reporting-days: 30
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      # Adds /actuator/health/liveness and /actuator/health/readiness for Kubernetes.
+      probes:
+        enabled: true
+      group:
+        # Not ready if the database is down. Liveness ignores the DB on purpose,
+        # so a DB outage doesn't make Kubernetes restart every pod.
+        readiness:
+          include: readinessState,db
+  info:
+    env:
+      enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      # Histogram buckets so Prometheus can compute p95/p99.
+      percentiles-histogram:
+        claims.fraud.assessment: true
+
+info:
+  app:
+    name: claimflow
+    description: P&C insurance claims processing service
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  structured:
+    format:
+      # JSON logs (Elastic Common Schema). MDC values like claimNumber are included.
+      console: ecs

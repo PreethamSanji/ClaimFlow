@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import com.claimflow.claim.Claim;
 import com.claimflow.claim.ClaimRepository;
 import com.claimflow.claim.FraudFlag;
+import com.claimflow.observability.ClaimMetrics;
 
 /** Runs every FraudRule bean against a claim and collects the flags. */
 @Service
@@ -24,26 +25,33 @@ public class FraudAssessmentService {
     private final List<FraudRule> rules;
     private final ClaimRepository claimRepository;
     private final FraudProperties properties;
+    private final ClaimMetrics metrics;
     private final Clock clock;
 
     public FraudAssessmentService(List<FraudRule> rules, ClaimRepository claimRepository,
-                                  FraudProperties properties, Clock clock) {
+                                  FraudProperties properties, ClaimMetrics metrics, Clock clock) {
         this.rules = rules;
         this.claimRepository = claimRepository;
         this.properties = properties;
+        this.metrics = metrics;
         this.clock = clock;
     }
 
     public List<FraudFlag> assess(Claim claim) {
-        ClaimContext context = buildContext(claim);
-        List<FraudFlag> flags = rules.stream()
-                .map(rule -> rule.evaluate(claim, context))
-                .flatMap(Optional::stream)
-                .toList();
+        List<FraudFlag> flags = metrics.timeFraudAssessment(() -> runRules(claim));
+        flags.forEach(flag -> metrics.fraudFlagRaised(flag.getRule()));
         if (!flags.isEmpty()) {
             log.info("Fraud rules raised {} flag(s): {}", flags.size(), flags);
         }
         return flags;
+    }
+
+    private List<FraudFlag> runRules(Claim claim) {
+        ClaimContext context = buildContext(claim);
+        return rules.stream()
+                .map(rule -> rule.evaluate(claim, context))
+                .flatMap(Optional::stream)
+                .toList();
     }
 
     private ClaimContext buildContext(Claim claim) {

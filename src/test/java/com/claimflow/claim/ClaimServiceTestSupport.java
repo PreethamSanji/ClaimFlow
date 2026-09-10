@@ -3,7 +3,10 @@ package com.claimflow.claim;
 import java.time.Clock;
 
 import com.claimflow.fraud.FraudAssessmentService;
+import com.claimflow.observability.ClaimMetrics;
 import com.claimflow.policy.PolicyRepository;
+
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 /** One place to build ClaimService for unit tests, so constructor changes touch one file. */
 final class ClaimServiceTestSupport {
@@ -17,6 +20,6 @@ final class ClaimServiceTestSupport {
                                    FraudAssessmentService fraudAssessmentService,
                                    Clock clock) {
         return new ClaimService(claimRepository, claimEventRepository, policyRepository,
-                new ClaimStateMachine(), fraudAssessmentService, clock);
+                new ClaimStateMachine(), fraudAssessmentService, new ClaimMetrics(new SimpleMeterRegistry()), clock);
     }
 }

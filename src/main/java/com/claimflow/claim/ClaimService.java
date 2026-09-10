@@ -22,6 +22,7 @@ import com.claimflow.common.BusinessRuleViolationException;
 import com.claimflow.common.PageResponse;
 import com.claimflow.common.ResourceNotFoundException;
 import com.claimflow.fraud.FraudAssessmentService;
+import com.claimflow.observability.ClaimMetrics;
 import com.claimflow.policy.Policy;
 import com.claimflow.policy.PolicyRepository;
 
@@ -38,6 +39,7 @@ public class ClaimService {
     private final PolicyRepository policyRepository;
     private final ClaimStateMachine stateMachine;
     private final FraudAssessmentService fraudAssessmentService;
+    private final ClaimMetrics metrics;
     private final Clock clock;
 
     public ClaimService(ClaimRepository claimRepository,
@@ -45,12 +47,14 @@ public class ClaimService {
                         PolicyRepository policyRepository,
                         ClaimStateMachine stateMachine,
                         FraudAssessmentService fraudAssessmentService,
+                        ClaimMetrics metrics,
                         Clock clock) {
         this.claimRepository = claimRepository;
         this.claimEventRepository = claimEventRepository;
         this.policyRepository = policyRepository;
         this.stateMachine = stateMachine;
         this.fraudAssessmentService = fraudAssessmentService;
+        this.metrics = metrics;
         this.clock = clock;
     }
 
@@ -65,6 +69,7 @@ public class ClaimService {
         Claim claim = claimRepository.save(new Claim(nextClaimNumber(), policy, request.incidentDate(), now,
                 request.description().trim(), request.claimedAmount()));
         claimEventRepository.save(new ClaimEvent(claim, null, ClaimStatus.FNOL, "First notice of loss", actor, now));
+        metrics.claimCreated();
 
         try (MDC.MDCCloseable ignored = MDC.putCloseable("claimNumber", claim.getClaimNumber())) {
             log.info("Claim filed on policy {} for {}", policy.getPolicyNumber(), claim.getClaimedAmount());
@@ -179,6 +184,7 @@ public class ClaimService {
         ClaimStatus from = claim.getStatus();
         claim.changeStatus(to);
         claimEventRepository.save(new ClaimEvent(claim, from, to, reason, actor, Instant.now(clock)));
+        metrics.transition(from, to);
         log.info("Claim moved from {} to {} by {}", from, to, actor);
     }
 
