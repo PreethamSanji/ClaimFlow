@@ -507,6 +507,12 @@ it runs in parallel with the Java build.
   future `V2` still applies on a dev DB that already has seeds.
 - **UTC everywhere**: the `Clock` bean is UTC, Hibernate's JDBC time zone is UTC, and `reportedAt` is converted
   to a date in UTC for the late-reporting rule.
+- **Two kinds of validation exception (a bug CI caught).** `ClaimController` has `@Size(max = 100)`
+  on the `X-Actor` header. In Spring 6.1+, any constraint directly on a controller parameter turns on
+  *method validation* for that whole method. Then even `@Valid` body errors arrive as
+  `HandlerMethodValidationException`, not `MethodArgumentNotValidException`. The first version only
+  formatted the second one, so the 400 responses lost their `errors` list. The fix: `GlobalExceptionHandler`
+  now formats both the same way. That's a good "tell me about a bug you fixed" story.
 - **The actor comes from `X-Actor`**, defaulting to `api-user`. With real auth you'd take it from the
   logged-in user (for example, a JWT subject via Spring Security).
 

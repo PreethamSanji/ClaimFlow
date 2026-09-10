@@ -1,5 +1,6 @@
 package com.claimflow.common;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -15,11 +16,13 @@ import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
-import org.springframework.validation.FieldError;
+import org.springframework.validation.method.ParameterErrors;
+import org.springframework.validation.method.ParameterValidationResult;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 import com.claimflow.claim.InvalidClaimTransitionException;
@@ -77,24 +80,56 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return problem(HttpStatus.INTERNAL_SERVER_ERROR, "Internal error", "Something went wrong.");
     }
 
-    /** Bean Validation failures on @Valid request bodies. Adds a field-by-field "errors" list. */
+    /** Bean Validation failures on @Valid request bodies. */
     @Override
     protected ResponseEntity<Object> handleMethodArgumentNotValid(MethodArgumentNotValidException ex,
                                                                   HttpHeaders headers,
                                                                   HttpStatusCode status,
                                                                   WebRequest request) {
-        List<Map<String, String>> errors = ex.getBindingResult().getFieldErrors().stream()
-                .sorted(Comparator.comparing(FieldError::getField))
-                .map(error -> Map.of(
-                        "field", error.getField(),
-                        "message", Objects.requireNonNullElse(error.getDefaultMessage(), "is invalid")))
-                .toList();
+        List<Map<String, String>> errors = new ArrayList<>();
+        ex.getBindingResult().getFieldErrors()
+                .forEach(error -> errors.add(fieldError(error.getField(), error.getDefaultMessage())));
+        return validationProblem(ex, ex.getBody(), errors, headers, status, request);
+    }
 
-        ProblemDetail body = ex.getBody();
+    /**
+     * Same, for controller methods that also have constraints on plain parameters
+     * (@Size on a header, @Max on a query param). Spring then reports ALL errors,
+     * including @Valid body fields, through this exception instead.
+     */
+    @Override
+    protected ResponseEntity<Object> handleHandlerMethodValidationException(HandlerMethodValidationException ex,
+                                                                            HttpHeaders headers,
+                                                                            HttpStatusCode status,
+                                                                            WebRequest request) {
+        List<Map<String, String>> errors = new ArrayList<>();
+        for (ParameterValidationResult result : ex.getParameterValidationResults()) {
+            if (result instanceof ParameterErrors bodyErrors) {
+                bodyErrors.getFieldErrors()
+                        .forEach(error -> errors.add(fieldError(error.getField(), error.getDefaultMessage())));
+            } else {
+                String name = result.getMethodParameter().getParameterName();
+                result.getResolvableErrors()
+                        .forEach(error -> errors.add(fieldError(name, error.getDefaultMessage())));
+            }
+        }
+        return validationProblem(ex, ex.getBody(), errors, headers, status, request);
+    }
+
+    private ResponseEntity<Object> validationProblem(Exception ex, ProblemDetail body,
+                                                     List<Map<String, String>> errors, HttpHeaders headers,
+                                                     HttpStatusCode status, WebRequest request) {
+        errors.sort(Comparator.comparing(error -> error.get("field")));
         body.setTitle("Validation failed");
         body.setDetail("One or more fields are invalid.");
         body.setProperty("errors", errors);
         return handleExceptionInternal(ex, body, headers, status, request);
+    }
+
+    private static Map<String, String> fieldError(String field, String message) {
+        return Map.of(
+                "field", Objects.requireNonNullElse(field, "request"),
+                "message", Objects.requireNonNullElse(message, "is invalid"));
     }
 
     private static ResponseEntity<ProblemDetail> problem(HttpStatus status, String title, String detail) {
