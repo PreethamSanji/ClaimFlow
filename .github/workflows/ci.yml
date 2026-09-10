@@ -21,9 +21,20 @@ jobs:
 
       # Unit tests (surefire) + integration tests with Testcontainers (failsafe).
       # ubuntu-latest has Docker, so Testcontainers just works.
-      # useFile=false prints failure details straight into this log.
       - name: mvn verify
-        run: mvn -B verify -Dsurefire.useFile=false -Dfailsafe.useFile=false
+        run: mvn -B verify
+
+      # Prints only the reports of failing test classes, at the end of the log.
+      - name: Show failed tests
+        if: failure()
+        run: |
+          for f in target/surefire-reports/*.txt target/failsafe-reports/*.txt; do
+            [ -f "$f" ] || continue
+            if grep -qE "FAILURE!|ERROR!" "$f"; then
+              echo "===== $f"
+              head -n 120 "$f"
+            fi
+          done
 
       - name: Upload test reports
         if: always()
