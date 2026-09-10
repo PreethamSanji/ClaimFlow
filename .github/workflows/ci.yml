@@ -21,8 +21,9 @@ jobs:
 
       # Unit tests (surefire) + integration tests with Testcontainers (failsafe).
       # ubuntu-latest has Docker, so Testcontainers just works.
+      # useFile=false prints failure details straight into this log.
       - name: mvn verify
-        run: mvn -B verify
+        run: mvn -B verify -Dsurefire.useFile=false -Dfailsafe.useFile=false
 
       - name: Upload test reports
         if: always()
@@ -42,10 +43,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # helm-unittest's plugin.yaml needs Helm 3.18+ (platformHooks field).
       - name: Set up Helm 3
         uses: azure/setup-helm@v4
         with:
-          version: v3.16.4
+          version: v3.18.6
 
       - name: helm lint
         run: helm lint deploy/helm/claimflow
