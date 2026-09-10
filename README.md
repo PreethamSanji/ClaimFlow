@@ -20,22 +20,22 @@ Docker · Helm 3 · GitHub Actions
 
 ```mermaid
 flowchart LR
-    client([HTTP client]) -->|JSON| controllers
+    client(["HTTP client"]) -->|"JSON"| controllers
 
-    subgraph app [ClaimFlow - Spring Boot]
-        controllers[Controllers<br/>DTO records + @Valid] --> services[Services<br/>@Transactional]
-        advice[GlobalExceptionHandler<br/>RFC 7807 ProblemDetail] -.-> controllers
-        services --> sm[ClaimStateMachine]
-        services --> fraud[FraudAssessmentService]
-        fraud --> rules[FraudRule beans<br/>Amount / Early / Frequency / Late]
-        services --> repos[Spring Data JPA<br/>repositories]
-        services --> metrics[ClaimMetrics<br/>Micrometer]
+    subgraph app ["ClaimFlow - Spring Boot"]
+        controllers["Controllers<br/>DTO records + Valid"] --> services["Services<br/>Transactional"]
+        advice["GlobalExceptionHandler<br/>RFC 7807 ProblemDetail"] -.-> controllers
+        services --> sm["ClaimStateMachine"]
+        services --> fraud["FraudAssessmentService"]
+        fraud --> rules["FraudRule beans<br/>Amount / Early / Frequency / Late"]
+        services --> repos["Spring Data JPA<br/>repositories"]
+        services --> metrics["ClaimMetrics<br/>Micrometer"]
     end
 
-    repos --> db[(PostgreSQL 16)]
-    flyway[Flyway migrations] --> db
-    prom([Prometheus]) -->|/actuator/prometheus| app
-    k8s([Kubernetes probes]) -->|/actuator/health/liveness<br/>/actuator/health/readiness| app
+    repos --> db[("PostgreSQL 16")]
+    flyway["Flyway migrations"] --> db
+    prom(["Prometheus"]) -->|"/actuator/prometheus"| app
+    k8s(["Kubernetes probes"]) -->|"/actuator/health/liveness<br/>/actuator/health/readiness"| app
 ```
 
 Code is grouped **by feature** (`customer`, `policy`, `claim`, `fraud`), not by layer, so everything
