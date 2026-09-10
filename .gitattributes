@@ -1,0 +1,4 @@
+# Keep LF line endings in the repo (Docker, shell, YAML all expect LF).
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
