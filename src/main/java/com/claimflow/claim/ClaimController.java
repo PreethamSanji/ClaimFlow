@@ -1,6 +1,7 @@
 package com.claimflow.claim;
 
 import java.net.URI;
+import java.util.List;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -49,6 +50,19 @@ public class ClaimController {
     @GetMapping("/{id}")
     public ClaimResponse get(@PathVariable Long id) {
         return claimService.get(id);
+    }
+
+    @PostMapping("/{id}/transitions")
+    public ClaimResponse transition(
+            @PathVariable Long id,
+            @Valid @RequestBody TransitionRequest request,
+            @RequestHeader(value = ACTOR_HEADER, defaultValue = DEFAULT_ACTOR) @Size(max = 100) String actor) {
+        return claimService.transition(id, request, actor);
+    }
+
+    @GetMapping("/{id}/events")
+    public List<ClaimEventResponse> events(@PathVariable Long id) {
+        return claimService.events(id);
     }
 
     @GetMapping

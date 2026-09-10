@@ -22,6 +22,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
+import com.claimflow.claim.InvalidClaimTransitionException;
+
 /**
  * Turns exceptions into RFC 7807 ProblemDetail JSON.
  * The parent class already handles Spring's own errors (bad JSON, missing params...) as 400.
@@ -39,6 +41,15 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(BusinessRuleViolationException.class)
     public ResponseEntity<ProblemDetail> handleBusinessRule(BusinessRuleViolationException ex) {
         return problem(HttpStatus.UNPROCESSABLE_ENTITY, "Business rule violated", ex.getMessage());
+    }
+
+    @ExceptionHandler(InvalidClaimTransitionException.class)
+    public ResponseEntity<ProblemDetail> handleInvalidTransition(InvalidClaimTransitionException ex) {
+        ResponseEntity<ProblemDetail> response =
+                problem(HttpStatus.CONFLICT, "Invalid claim transition", ex.getMessage());
+        response.getBody().setProperty("fromStatus", ex.getFromStatus());
+        response.getBody().setProperty("toStatus", ex.getToStatus());
+        return response;
     }
 
     @ExceptionHandler(DuplicateResourceException.class)

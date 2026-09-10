@@ -14,6 +14,7 @@ final class ClaimServiceTestSupport {
                                    ClaimEventRepository claimEventRepository,
                                    PolicyRepository policyRepository,
                                    Clock clock) {
-        return new ClaimService(claimRepository, claimEventRepository, policyRepository, clock);
+        return new ClaimService(claimRepository, claimEventRepository, policyRepository,
+                new ClaimStateMachine(), clock);
     }
 }

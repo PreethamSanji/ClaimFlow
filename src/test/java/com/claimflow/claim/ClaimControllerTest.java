@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.http.MediaType;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -126,6 +127,80 @@ class ClaimControllerTest {
         mockMvc.perform(get("/api/v1/claims/404"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.detail").value("Claim with id 404 was not found"));
+    }
+
+    @Test
+    void transitionReturnsUpdatedClaim() throws Exception {
+        when(claimService.transition(eq(5L), any(), eq("adjuster.kim")))
+                .thenReturn(sampleClaim(ClaimStatus.UNDER_REVIEW));
+
+        mockMvc.perform(post("/api/v1/claims/5/transitions")
+                        .header("X-Actor", "adjuster.kim")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"toStatus": "UNDER_REVIEW", "reason": "Assigned to adjuster"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("UNDER_REVIEW"));
+    }
+
+    @Test
+    void invalidTransitionReturns409ProblemDetail() throws Exception {
+        when(claimService.transition(eq(5L), any(), any()))
+                .thenThrow(new InvalidClaimTransitionException(ClaimStatus.PAID, ClaimStatus.APPROVED));
+
+        mockMvc.perform(post("/api/v1/claims/5/transitions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"toStatus": "APPROVED", "reason": "try again", "approvedAmount": 10}
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.title").value("Invalid claim transition"))
+                .andExpect(jsonPath("$.detail").value("Cannot move a claim from PAID to APPROVED"))
+                .andExpect(jsonPath("$.fromStatus").value("PAID"))
+                .andExpect(jsonPath("$.toStatus").value("APPROVED"));
+    }
+
+    @Test
+    void transitionWithoutToStatusOrReasonReturns400() throws Exception {
+        mockMvc.perform(post("/api/v1/claims/5/transitions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[*].field", hasItems("toStatus", "reason")));
+
+        verifyNoInteractions(claimService);
+    }
+
+    @Test
+    void optimisticLockFailureReturns409() throws Exception {
+        when(claimService.transition(eq(5L), any(), any()))
+                .thenThrow(new ObjectOptimisticLockingFailureException(Claim.class, 5L));
+
+        mockMvc.perform(post("/api/v1/claims/5/transitions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"toStatus": "REJECTED", "reason": "duplicate"}
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.title").value("Concurrent modification"));
+    }
+
+    @Test
+    void eventsReturnsAuditTrail() throws Exception {
+        when(claimService.events(5L)).thenReturn(List.of(
+                new ClaimEventResponse(1L, null, ClaimStatus.FNOL, "First notice of loss", "api-user",
+                        Instant.parse("2026-06-02T10:00:00Z")),
+                new ClaimEventResponse(2L, ClaimStatus.FNOL, ClaimStatus.UNDER_REVIEW, "Assigned", "adjuster.kim",
+                        Instant.parse("2026-06-03T10:00:00Z"))));
+
+        mockMvc.perform(get("/api/v1/claims/5/events"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].toStatus").value("FNOL"))
+                .andExpect(jsonPath("$[1].fromStatus").value("FNOL"))
+                .andExpect(jsonPath("$[1].actor").value("adjuster.kim"));
     }
 
     @Test

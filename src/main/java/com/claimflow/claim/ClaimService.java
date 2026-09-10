@@ -1,9 +1,11 @@
 package com.claimflow.claim;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.Year;
+import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,15 +32,18 @@ public class ClaimService {
     private final ClaimRepository claimRepository;
     private final ClaimEventRepository claimEventRepository;
     private final PolicyRepository policyRepository;
+    private final ClaimStateMachine stateMachine;
     private final Clock clock;
 
     public ClaimService(ClaimRepository claimRepository,
                         ClaimEventRepository claimEventRepository,
                         PolicyRepository policyRepository,
+                        ClaimStateMachine stateMachine,
                         Clock clock) {
         this.claimRepository = claimRepository;
         this.claimEventRepository = claimEventRepository;
         this.policyRepository = policyRepository;
+        this.stateMachine = stateMachine;
         this.clock = clock;
     }
 
@@ -60,6 +65,31 @@ public class ClaimService {
         return ClaimResponse.from(claim);
     }
 
+    /**
+     * Moves a claim to a new status. Steps: check the move is allowed, check approval
+     * amounts, write the audit event, save.
+     */
+    @Transactional
+    public ClaimResponse transition(Long claimId, TransitionRequest request, String actor) {
+        Claim claim = findClaim(claimId);
+        try (MDC.MDCCloseable ignored = MDC.putCloseable("claimNumber", claim.getClaimNumber())) {
+            ClaimStatus to = request.toStatus();
+            stateMachine.validate(claim.getStatus(), to);
+
+            if (to == ClaimStatus.APPROVED) {
+                claim.approve(checkApprovedAmount(claim, request.approvedAmount()));
+            } else if (request.approvedAmount() != null) {
+                throw new BusinessRuleViolationException("approvedAmount is only allowed when moving to APPROVED");
+            }
+
+            recordTransition(claim, to, request.reason(), actor);
+
+            // Flush now so a @Version conflict fails here and becomes a 409.
+            claimRepository.saveAndFlush(claim);
+            return ClaimResponse.from(claim);
+        }
+    }
+
     public ClaimResponse get(Long id) {
         return ClaimResponse.from(findClaim(id));
     }
@@ -79,6 +109,15 @@ public class ClaimService {
         return PageResponse.from(claims.map(ClaimResponse::from));
     }
 
+    public List<ClaimEventResponse> events(Long claimId) {
+        if (!claimRepository.existsById(claimId)) {
+            throw new ResourceNotFoundException("Claim", claimId);
+        }
+        return claimEventRepository.findByClaimIdOrderByOccurredAtAscIdAsc(claimId).stream()
+                .map(ClaimEventResponse::from)
+                .toList();
+    }
+
     private void checkFnolRules(Policy policy, LocalDate incidentDate) {
         if (!policy.isActive()) {
             throw new BusinessRuleViolationException(
@@ -91,6 +130,29 @@ public class ClaimService {
             throw new BusinessRuleViolationException("incidentDate " + incidentDate + " is outside the policy period "
                     + policy.getStartDate() + " to " + policy.getEndDate());
         }
+    }
+
+    private BigDecimal checkApprovedAmount(Claim claim, BigDecimal approvedAmount) {
+        if (approvedAmount == null) {
+            throw new BusinessRuleViolationException("approvedAmount is required when approving a claim");
+        }
+        Policy policy = claim.getPolicy();
+        BigDecimal max = ApprovalLimits.maxApprovable(
+                claim.getClaimedAmount(), policy.getDeductible(), policy.getCoverageLimit());
+        if (approvedAmount.compareTo(max) > 0) {
+            throw new BusinessRuleViolationException("approvedAmount " + approvedAmount
+                    + " is more than the maximum payable " + max
+                    + " (claimed amount minus deductible, capped at the coverage limit)");
+        }
+        return approvedAmount;
+    }
+
+    /** Changes the status and writes one audit row. Caller must validate the move first. */
+    private void recordTransition(Claim claim, ClaimStatus to, String reason, String actor) {
+        ClaimStatus from = claim.getStatus();
+        claim.changeStatus(to);
+        claimEventRepository.save(new ClaimEvent(claim, from, to, reason, actor, Instant.now(clock)));
+        log.info("Claim moved from {} to {} by {}", from, to, actor);
     }
 
     private Claim findClaim(Long id) {
